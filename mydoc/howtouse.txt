@@ -1,0 +1,1 @@
+﻿https://github.com/atom/electron/blob/master/docs/tutorial/quick-start.md
