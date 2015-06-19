@@ -1,0 +1,11 @@
+
+特点：
+	1.入口是一个js，需要在js中创建web窗口和加载html
+
+源码结构
+	doc/develepment/source-code-directory-structure.md
+	
+	atom\browser\api
+		这里面是底层api，例如app对象对应的是 atom_api_app.h
+		
+怎么在页面的脚本中访问app等对象
