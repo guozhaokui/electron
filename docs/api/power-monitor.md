@@ -1,33 +1,41 @@
-# power-monitor
+# powerMonitor
 
-The `power-monitor` module is used to monitor the power state change. You can
-only use it on the main process. You should not use this module until the `ready` 
-event of `app` module gets emitted.
+> Monitor power state changes.
 
-An example is:
+Process: [Main](../tutorial/quick-start.md#main-process)
+
+You cannot require or use this module until the `ready` event of the `app`
+module is emitted.
+
+For example:
 
 ```javascript
-var app = require('app');
+const electron = require('electron')
+const {app} = electron
 
-app.on('ready', function() {
-  require('power-monitor').on('suspend', function() {
-    console.log('The system is going to sleep');
-  });
-});
+app.on('ready', () => {
+  electron.powerMonitor.on('suspend', () => {
+    console.log('The system is going to sleep')
+  })
+})
 ```
 
-## Event: suspend
+## Events
+
+The `powerMonitor` module emits the following events:
+
+### Event: 'suspend'
 
 Emitted when the system is suspending.
 
-## Event: resume
+### Event: 'resume'
 
 Emitted when system is resuming.
 
-## Event: on-ac
+### Event: 'on-ac' _Windows_
 
 Emitted when the system changes to AC power.
 
-## Event: on-battery
+### Event: 'on-battery' _Windows_
 
 Emitted when system changes to battery power.

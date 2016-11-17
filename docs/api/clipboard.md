@@ -1,90 +1,169 @@
 # clipboard
 
-The `clipboard` provides methods to do copy/paste operations. An example of
-writing a string to clipboard:
+> Perform copy and paste operations on the system clipboard.
+
+Process: [Main](../tutorial/quick-start.md#main-process), [Renderer](../tutorial/quick-start.md#renderer-process)
+
+The following example shows how to write a string to the clipboard:
 
 ```javascript
-var clipboard = require('clipboard');
-clipboard.writeText('Example String');
+const {clipboard} = require('electron')
+clipboard.writeText('Example String')
 ```
 
-On X Window systems, there is also a selection clipboard, to manipulate in it
+On X Window systems, there is also a selection clipboard. To manipulate it
 you need to pass `selection` to each method:
 
 ```javascript
-var clipboard = require('clipboard');
-clipboard.writeText('Example String', 'selection');
-console.log(clipboard.readText('selection'));
+const {clipboard} = require('electron')
+clipboard.writeText('Example String', 'selection')
+console.log(clipboard.readText('selection'))
 ```
 
-## clipboard.readText([type])
+## Methods
 
-* `type` String
+The `clipboard` module has the following methods:
 
-Returns the content in clipboard as plain text.
+**Note:** Experimental APIs are marked as such and could be removed in future.
 
-## clipboard.writeText(text[, type])
+### `clipboard.readText([type])`
+
+* `type` String (optional)
+
+Returns `String` - The content in the clipboard as plain text.
+
+### `clipboard.writeText(text[, type])`
 
 * `text` String
-* `type` String
+* `type` String (optional)
 
-Writes the `text` into clipboard as plain text.
+Writes the `text` into the clipboard as plain text.
 
-## clipboard.readHtml([type])
+### `clipboard.readHTML([type])`
 
-* `type` String
+* `type` String (optional)
 
-Returns the content in clipboard as markup.
+Returns `String` - The content in the clipboard as markup.
 
-## clipboard.writeHtml(markup[, type])
+### `clipboard.writeHTML(markup[, type])`
 
 * `markup` String
-* `type` String
+* `type` String (optional)
 
-Writes the `markup` into clipboard.
+Writes `markup` to the clipboard.
 
-## clipboard.readImage([type])
+### `clipboard.readImage([type])`
 
-* `type` String
+* `type` String (optional)
 
-Returns the content in clipboard as [NativeImage](native-image.md).
+Returns `NativeImage` - The content in the clipboard as a [NativeImage](native-image.md).
 
-## clipboard.writeImage(image[, type])
+### `clipboard.writeImage(image[, type])`
 
 * `image` [NativeImage](native-image.md)
-* `type` String
+* `type` String (optional)
 
-Writes the `image` into clipboard.
+Writes `image` to the clipboard.
 
-## clipboard.clear([type])
+### `clipboard.readRTF([type])`
 
-* `type` String
+* `type` String (optional)
 
-Clears everything in clipboard.
+Returns `String` - The content in the clipboard as RTF.
 
-## clipboard.availableFormats([type])
+### `clipboard.writeRTF(text[, type])`
 
-Returns an array of supported `format` for the clipboard `type`.
+* `text` String
+* `type` String (optional)
 
-## clipboard.has(data[, type])
+Writes the `text` into the clipboard in RTF.
 
-* `data` String
-* `type` String
+### `clipboard.readBookmark()` _macOS_ _Windows_
 
-Returns whether clipboard supports the format of specified `data`.
+Returns `Object`:
 
-```javascript
-var clipboard = require('clipboard');
-console.log(clipboard.has('<p>selection</p>'));
+* `title` String
+* `url` String
+
+Returns an Object containing `title` and `url` keys representing the bookmark in
+the clipboard. The `title` and `url` values will be empty strings when the
+bookmark is unavailable.
+
+### `clipboard.writeBookmark(title, url[, type])` _macOS_ _Windows_
+
+* `title` String
+* `url` String
+* `type` String (optional)
+
+Writes the `title` and `url` into the clipboard as a bookmark.
+
+**Note:** Most apps on Windows don't support pasting bookmarks into them so
+you can use `clipboard.write` to write both a bookmark and fallback text to the
+clipboard.
+
+```js
+clipboard.write({
+  text: 'http://electron.atom.io',
+  bookmark: 'Electron Homepage'
+})
 ```
 
-**Note:** This API is experimental and could be removed in future.
+### `clipboard.readFindText()` _macOS_
 
-## clipboard.read(data[, type])
+Returns `String` - The text on the find pasteboard. This method uses synchronous
+IPC when called from the renderer process. The cached value is reread from the
+find pasteboard whenever the application is activated.
+
+### `clipboard.writeFindText(text)` _macOS_
+
+* `text` String
+
+Writes the `text` into the find pasteboard as plain text. This method uses
+synchronous IPC when called from the renderer process.
+
+### `clipboard.clear([type])`
+
+* `type` String (optional)
+
+Clears the clipboard content.
+
+### `clipboard.availableFormats([type])`
+
+* `type` String (optional)
+
+Returns `String[]` - An array of supported formats for the clipboard `type`.
+
+### `clipboard.has(data[, type])` _Experimental_
 
 * `data` String
-* `type` String
+* `type` String (optional)
 
-Reads the `data` in clipboard.
+Returns `Boolean` - Whether the clipboard supports the format of specified `data`.
 
-**Note:** This API is experimental and could be removed in future.
+```javascript
+const {clipboard} = require('electron')
+console.log(clipboard.has('<p>selection</p>'))
+```
+
+### `clipboard.read(data[, type])` _Experimental_
+
+* `data` String
+* `type` String (optional)
+
+Returns `String` - Reads `data` from the clipboard.
+
+### `clipboard.write(data[, type])`
+
+* `data` Object
+  * `text` String (optional)
+  * `html` String (optional)
+  * `image` [NativeImage](native-image.md) (optional)
+  * `rtf` String (optional)
+  * `bookmark` String (optional) - The title of the url at `text`.
+* `type` String (optional)
+
+```javascript
+const {clipboard} = require('electron')
+clipboard.write({text: 'test', html: '<b>test</b>'})
+```
+Writes `data` to the clipboard.

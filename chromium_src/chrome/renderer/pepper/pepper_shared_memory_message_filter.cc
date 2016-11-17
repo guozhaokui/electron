@@ -4,7 +4,8 @@
 
 #include "chrome/renderer/pepper/pepper_shared_memory_message_filter.h"
 
-#include "base/memory/scoped_ptr.h"
+#include <memory>
+
 #include "base/memory/shared_memory.h"
 #include "base/process/process_handle.h"
 #include "content/public/common/content_client.h"
@@ -43,9 +44,8 @@ void PepperSharedMemoryMessageFilter::OnHostMsgCreateSharedMemory(
     ppapi::proxy::SerializedHandle* plugin_handle) {
   plugin_handle->set_null_shmem();
   *host_handle_id = -1;
-  scoped_ptr<base::SharedMemory> shm(content::RenderThread::Get()
-                                         ->HostAllocateSharedMemoryBuffer(size)
-                                         .Pass());
+  std::unique_ptr<base::SharedMemory> shm(
+      content::RenderThread::Get()->HostAllocateSharedMemoryBuffer(size));
   if (!shm.get())
     return;
 
@@ -56,17 +56,9 @@ void PepperSharedMemoryMessageFilter::OnHostMsgCreateSharedMemory(
           ->GetVarTracker()
           ->TrackSharedMemoryHandle(instance, host_shm_handle, size);
 
-  base::PlatformFile host_handle =
-#if defined(OS_WIN)
-      host_shm_handle;
-#elif defined(OS_POSIX)
-      host_shm_handle.fd;
-#else
-#error Not implemented.
-#endif
   // We set auto_close to false since we need our file descriptor to
   // actually be duplicated on linux. The shared memory destructor will
   // close the original handle for us.
-  plugin_handle->set_shmem(host_->ShareHandleWithRemote(host_handle, false),
-                           size);
+  plugin_handle->set_shmem(
+      host_->ShareSharedMemoryHandleWithRemote(host_shm_handle), size);
 }

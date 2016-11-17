@@ -10,9 +10,9 @@
 #include "atom/browser/native_window.h"
 #include "atom/browser/ui/file_dialog.h"
 #include "atom/browser/ui/message_box.h"
+#include "atom/common/native_mate_converters/callback.h"
 #include "atom/common/native_mate_converters/file_path_converter.h"
 #include "atom/common/native_mate_converters/image_converter.h"
-#include "native_mate/callback.h"
 #include "native_mate/dictionary.h"
 
 #include "atom/common/node_includes.h"
@@ -41,32 +41,33 @@ namespace {
 
 void ShowMessageBox(int type,
                     const std::vector<std::string>& buttons,
-                    const std::vector<std::string>& texts,
+                    int default_id,
+                    int cancel_id,
+                    int options,
+                    const std::string& title,
+                    const std::string& message,
+                    const std::string& detail,
                     const gfx::ImageSkia& icon,
                     atom::NativeWindow* window,
                     mate::Arguments* args) {
-  // FIXME We are exceeding the parameters limit of base::Bind here, so we have
-  // to pass some parameters in an array. We should remove this once we have
-  // variadic template support in base::Bind.
-  const std::string& title = texts[0];
-  const std::string& message = texts[1];
-  const std::string& detail = texts[2];
-
   v8::Local<v8::Value> peek = args->PeekNext();
   atom::MessageBoxCallback callback;
   if (mate::Converter<atom::MessageBoxCallback>::FromV8(args->isolate(),
                                                         peek,
                                                         &callback)) {
-    atom::ShowMessageBox(window, (atom::MessageBoxType)type, buttons, title,
+    atom::ShowMessageBox(window, (atom::MessageBoxType)type, buttons,
+                         default_id, cancel_id, options, title,
                          message, detail, icon, callback);
   } else {
     int chosen = atom::ShowMessageBox(window, (atom::MessageBoxType)type,
-                                      buttons, title, message, detail, icon);
+                                      buttons, default_id, cancel_id,
+                                      options, title, message, detail, icon);
     args->Return(chosen);
   }
 }
 
 void ShowOpenDialog(const std::string& title,
+                    const std::string& button_label,
                     const base::FilePath& default_path,
                     const file_dialog::Filters& filters,
                     int properties,
@@ -77,17 +78,18 @@ void ShowOpenDialog(const std::string& title,
   if (mate::Converter<file_dialog::OpenDialogCallback>::FromV8(args->isolate(),
                                                                peek,
                                                                &callback)) {
-    file_dialog::ShowOpenDialog(window, title, default_path, filters,
-                                properties, callback);
+    file_dialog::ShowOpenDialog(window, title, button_label, default_path,
+                                filters, properties, callback);
   } else {
     std::vector<base::FilePath> paths;
-    if (file_dialog::ShowOpenDialog(window, title, default_path, filters,
-                                    properties, &paths))
+    if (file_dialog::ShowOpenDialog(window, title, button_label, default_path,
+                                    filters, properties, &paths))
       args->Return(paths);
   }
 }
 
 void ShowSaveDialog(const std::string& title,
+                    const std::string& button_label,
                     const base::FilePath& default_path,
                     const file_dialog::Filters& filters,
                     atom::NativeWindow* window,
@@ -97,11 +99,12 @@ void ShowSaveDialog(const std::string& title,
   if (mate::Converter<file_dialog::SaveDialogCallback>::FromV8(args->isolate(),
                                                                peek,
                                                                &callback)) {
-    file_dialog::ShowSaveDialog(window, title, default_path, filters, callback);
+    file_dialog::ShowSaveDialog(window, title, button_label, default_path,
+                                filters, callback);
   } else {
     base::FilePath path;
-    if (file_dialog::ShowSaveDialog(window, title, default_path, filters,
-                                    &path))
+    if (file_dialog::ShowSaveDialog(window, title, button_label, default_path,
+                                    filters, &path))
       args->Return(path);
   }
 }

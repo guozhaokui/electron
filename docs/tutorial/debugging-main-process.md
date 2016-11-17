@@ -1,49 +1,33 @@
-# Debugging the main process
+# Debugging the Main Process
 
-The devtools of browser window can only debug the renderer process scripts.
-(I.e. the web pages.) In order to provide a way to debug the scripts of
-the main process, Electron has provided the `--debug` and `--debug-brk`
-switches.
+The DevTools in an Electron browser window can only debug JavaScript that's
+executed in that window (i.e. the web pages). To debug JavaScript that's
+executed in the main process you will need to use an external debugger and
+launch Electron with the `--debug` or `--debug-brk` switch.
 
-## Command line switches
+## Command Line Switches
+
+Use one of the following command line switches to enable debugging of the main
+process:
 
 ### `--debug=[port]`
 
-When this switch is used Electron would listen for V8 debugger protocol
-messages on `port`, the `port` is `5858` by default.
+Electron will listen for V8 debugger protocol messages on the specified `port`,
+an external debugger will need to connect on this port. The default `port` is
+`5858`.
+
+```shell
+electron --debug=5858 your/app
+```
 
 ### `--debug-brk=[port]`
 
-Like `--debug` but pauses the script on the first line.
+Like `--debug` but pauses execution on the first line of JavaScript.
 
-## Use node-inspector for debugging
+## External Debuggers
 
-__Note:__ Electron uses node v0.11.13, which currently doesn't work very well
-with node-inspector, and the main process would crash if you inspect the
-`process` object under node-inspector's console.
+You will need to use a debugger that supports the V8 debugger protocol,
+the following guides should help you to get started:
 
-### 1. Start the [node-inspector][node-inspector] server
-
-```bash
-$ node-inspector
-```
-
-### 2. Enable debug mode for Electron
-
-You can either start Electron with a debug flag like:
-
-```bash
-$ electron --debug=5858 your/app
-```
-
-or, to pause your script on the first line:
-
-```bash
-$ electron --debug-brk=5858 your/app
-```
-
-### 3. Load the debugger UI
-
-Open http://127.0.0.1:8080/debug?ws=127.0.0.1:8080&port=5858 in the Chrome browser.
-
-[node-inspector]: https://github.com/node-inspector/node-inspector
+- [Debugging the Main Process in VSCode](debugging-main-process-vscode.md)
+- [Debugging the Main Process in node-inspector](debugging-main-process-node-inspector.md)

@@ -4,50 +4,62 @@
 
 #include "atom/renderer/api/atom_api_web_frame.h"
 
-// This defines are required by SchemeRegistry.h.
-#define ALWAYS_INLINE inline
-#define OS(WTF_FEATURE) (defined WTF_OS_##WTF_FEATURE  && WTF_OS_##WTF_FEATURE)  // NOLINT
-#define USE(WTF_FEATURE) (defined WTF_USE_##WTF_FEATURE  && WTF_USE_##WTF_FEATURE)  // NOLINT
-#define ENABLE(WTF_FEATURE) (defined ENABLE_##WTF_FEATURE  && ENABLE_##WTF_FEATURE)  // NOLINT
-
+#include "atom/common/api/event_emitter_caller.h"
+#include "atom/common/native_mate_converters/blink_converter.h"
+#include "atom/common/native_mate_converters/callback.h"
 #include "atom/common/native_mate_converters/gfx_converter.h"
 #include "atom/common/native_mate_converters/string16_converter.h"
 #include "atom/renderer/api/atom_api_spell_check_client.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "content/public/renderer/render_frame.h"
-#include "native_mate/callback.h"
+#include "content/public/renderer/render_view.h"
 #include "native_mate/dictionary.h"
 #include "native_mate/object_template_builder.h"
+#include "third_party/WebKit/public/web/WebCache.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/WebKit/public/web/WebScriptExecutionCallback.h"
+#include "third_party/WebKit/public/web/WebScriptSource.h"
+#include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/Source/platform/weborigin/SchemeRegistry.h"
 
 #include "atom/common/node_includes.h"
-
-namespace mate {
-
-template<>
-struct Converter<WTF::String> {
-  static bool FromV8(v8::Isolate* isolate,
-                     v8::Local<v8::Value> val,
-                     WTF::String* out) {
-    if (!val->IsString())
-      return false;
-
-    v8::String::Value s(val);
-    *out = WTF::String(reinterpret_cast<const base::char16*>(*s), s.length());
-    return true;
-  }
-};
-
-}  // namespace mate
 
 namespace atom {
 
 namespace api {
 
-WebFrame::WebFrame()
+namespace {
+
+class ScriptExecutionCallback : public blink::WebScriptExecutionCallback {
+ public:
+  using CompletionCallback =
+      base::Callback<void(
+          const v8::Local<v8::Value>& result)>;
+
+  explicit ScriptExecutionCallback(const CompletionCallback& callback)
+      : callback_(callback) {}
+  ~ScriptExecutionCallback() override {}
+
+  void completed(
+      const blink::WebVector<v8::Local<v8::Value>>& result) override {
+    if (!callback_.is_null() && !result.isEmpty() && !result[0].IsEmpty())
+      // Right now only single results per frame is supported.
+      callback_.Run(result[0]);
+    delete this;
+  }
+
+ private:
+  CompletionCallback callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScriptExecutionCallback);
+};
+
+}  // namespace
+
+WebFrame::WebFrame(v8::Isolate* isolate)
     : web_frame_(blink::WebLocalFrame::frameForCurrentContext()) {
+  Init(isolate);
 }
 
 WebFrame::~WebFrame() {
@@ -58,7 +70,9 @@ void WebFrame::SetName(const std::string& name) {
 }
 
 double WebFrame::SetZoomLevel(double level) {
-  return web_frame_->view()->setZoomLevel(level);
+  double ret = web_frame_->view()->setZoomLevel(level);
+  mate::EmitEvent(isolate(), GetWrapper(), "zoom-level-changed", ret);
+  return ret;
 }
 
 double WebFrame::GetZoomLevel() const {
@@ -72,6 +86,10 @@ double WebFrame::SetZoomFactor(double factor) {
 
 double WebFrame::GetZoomFactor() const {
   return blink::WebView::zoomLevelToZoomFactor(GetZoomLevel());
+}
+
+void WebFrame::SetZoomLevelLimits(double min_level, double max_level) {
+  web_frame_->view()->setDefaultPageScaleLimits(min_level, max_level);
 }
 
 v8::Local<v8::Value> WebFrame::RegisterEmbedderCustomElement(
@@ -92,6 +110,10 @@ void WebFrame::AttachGuest(int id) {
   content::RenderFrame::FromWebFrame(web_frame_)->AttachGuest(id);
 }
 
+void WebFrame::DetachGuest(int id) {
+  content::RenderFrame::FromWebFrame(web_frame_)->DetachGuest(id);
+}
+
 void WebFrame::SetSpellCheckProvider(mate::Arguments* args,
                                      const std::string& language,
                                      bool auto_spell_correct_turned_on,
@@ -106,27 +128,123 @@ void WebFrame::SetSpellCheckProvider(mate::Arguments* args,
   web_frame_->view()->setSpellCheckClient(spell_check_client_.get());
 }
 
-mate::ObjectTemplateBuilder WebFrame::GetObjectTemplateBuilder(
+void WebFrame::RegisterURLSchemeAsSecure(const std::string& scheme) {
+  // Register scheme to secure list (https, wss, data).
+  blink::WebSecurityPolicy::registerURLSchemeAsSecure(
+      blink::WebString::fromUTF8(scheme));
+}
+
+void WebFrame::RegisterURLSchemeAsBypassingCSP(const std::string& scheme) {
+  // Register scheme to bypass pages's Content Security Policy.
+  blink::WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(
+      blink::WebString::fromUTF8(scheme));
+}
+
+void WebFrame::RegisterURLSchemeAsPrivileged(const std::string& scheme,
+                                             mate::Arguments* args) {
+  // Read optional flags
+  bool secure = true;
+  bool bypassCSP = true;
+  bool allowServiceWorkers = true;
+  bool supportFetchAPI = true;
+  bool corsEnabled = true;
+  if (args->Length() == 2) {
+    mate::Dictionary options;
+    if (args->GetNext(&options)) {
+      options.Get("secure", &secure);
+      options.Get("bypassCSP", &bypassCSP);
+      options.Get("allowServiceWorkers", &allowServiceWorkers);
+      options.Get("supportFetchAPI", &supportFetchAPI);
+      options.Get("corsEnabled", &corsEnabled);
+    }
+  }
+  // Register scheme to privileged list (https, wss, data, chrome-extension)
+  blink::WebString privileged_scheme(blink::WebString::fromUTF8(scheme));
+  if (secure) {
+    blink::WebSecurityPolicy::registerURLSchemeAsSecure(privileged_scheme);
+  }
+  if (bypassCSP) {
+    blink::WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(
+        privileged_scheme);
+  }
+  if (allowServiceWorkers) {
+    blink::WebSecurityPolicy::registerURLSchemeAsAllowingServiceWorkers(
+        privileged_scheme);
+  }
+  if (supportFetchAPI) {
+    blink::WebSecurityPolicy::registerURLSchemeAsSupportingFetchAPI(
+        privileged_scheme);
+  }
+  if (corsEnabled) {
+    blink::WebSecurityPolicy::registerURLSchemeAsCORSEnabled(privileged_scheme);
+  }
+}
+
+void WebFrame::InsertText(const std::string& text) {
+  web_frame_->insertText(blink::WebString::fromUTF8(text));
+}
+
+void WebFrame::ExecuteJavaScript(const base::string16& code,
+                                 mate::Arguments* args) {
+  bool has_user_gesture = false;
+  args->GetNext(&has_user_gesture);
+  ScriptExecutionCallback::CompletionCallback completion_callback;
+  args->GetNext(&completion_callback);
+  std::unique_ptr<blink::WebScriptExecutionCallback> callback(
+      new ScriptExecutionCallback(completion_callback));
+  web_frame_->requestExecuteScriptAndReturnValue(
+      blink::WebScriptSource(code),
+      has_user_gesture,
+      callback.release());
+}
+
+// static
+mate::Handle<WebFrame> WebFrame::Create(v8::Isolate* isolate) {
+  return mate::CreateHandle(isolate, new WebFrame(isolate));
+}
+
+blink::WebCache::ResourceTypeStats WebFrame::GetResourceUsage(
     v8::Isolate* isolate) {
-  return mate::ObjectTemplateBuilder(isolate)
+  blink::WebCache::ResourceTypeStats stats;
+  blink::WebCache::getResourceTypeStats(&stats);
+  return stats;
+}
+
+void WebFrame::ClearCache(v8::Isolate* isolate) {
+  isolate->IdleNotificationDeadline(0.5);
+  blink::WebCache::clear();
+  base::MemoryPressureListener::NotifyMemoryPressure(
+    base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
+}
+
+// static
+void WebFrame::BuildPrototype(
+    v8::Isolate* isolate, v8::Local<v8::FunctionTemplate> prototype) {
+  prototype->SetClassName(mate::StringToV8(isolate, "WebFrame"));
+  mate::ObjectTemplateBuilder(isolate, prototype->PrototypeTemplate())
       .SetMethod("setName", &WebFrame::SetName)
       .SetMethod("setZoomLevel", &WebFrame::SetZoomLevel)
       .SetMethod("getZoomLevel", &WebFrame::GetZoomLevel)
       .SetMethod("setZoomFactor", &WebFrame::SetZoomFactor)
       .SetMethod("getZoomFactor", &WebFrame::GetZoomFactor)
+      .SetMethod("setZoomLevelLimits", &WebFrame::SetZoomLevelLimits)
       .SetMethod("registerEmbedderCustomElement",
                  &WebFrame::RegisterEmbedderCustomElement)
       .SetMethod("registerElementResizeCallback",
                  &WebFrame::RegisterElementResizeCallback)
       .SetMethod("attachGuest", &WebFrame::AttachGuest)
+      .SetMethod("detachGuest", &WebFrame::DetachGuest)
       .SetMethod("setSpellCheckProvider", &WebFrame::SetSpellCheckProvider)
-      .SetMethod("registerUrlSchemeAsSecure",
-                 &blink::SchemeRegistry::registerURLSchemeAsSecure);
-}
-
-// static
-mate::Handle<WebFrame> WebFrame::Create(v8::Isolate* isolate) {
-  return CreateHandle(isolate, new WebFrame);
+      .SetMethod("registerURLSchemeAsSecure",
+                 &WebFrame::RegisterURLSchemeAsSecure)
+      .SetMethod("registerURLSchemeAsBypassingCSP",
+                 &WebFrame::RegisterURLSchemeAsBypassingCSP)
+      .SetMethod("registerURLSchemeAsPrivileged",
+                 &WebFrame::RegisterURLSchemeAsPrivileged)
+      .SetMethod("insertText", &WebFrame::InsertText)
+      .SetMethod("executeJavaScript", &WebFrame::ExecuteJavaScript)
+      .SetMethod("getResourceUsage", &WebFrame::GetResourceUsage)
+      .SetMethod("clearCache", &WebFrame::ClearCache);
 }
 
 }  // namespace api
@@ -135,11 +253,14 @@ mate::Handle<WebFrame> WebFrame::Create(v8::Isolate* isolate) {
 
 namespace {
 
+using atom::api::WebFrame;
+
 void Initialize(v8::Local<v8::Object> exports, v8::Local<v8::Value> unused,
                 v8::Local<v8::Context> context, void* priv) {
   v8::Isolate* isolate = context->GetIsolate();
   mate::Dictionary dict(isolate, exports);
-  dict.Set("webFrame", atom::api::WebFrame::Create(isolate));
+  dict.Set("webFrame", WebFrame::Create(isolate));
+  dict.Set("WebFrame", WebFrame::GetConstructor(isolate)->GetFunction());
 }
 
 }  // namespace
